@@ -1,6 +1,6 @@
-# tfl-me - Implementation Plan
+# Stationly - Implementation Plan
 
-**Project**: tfl-me  
+**Project**: Stationly - From Platform to Pocket  
 **Start Date**: January 31, 2026  
 **Status**: In Development  
 **Architecture**: React Native (Expo) - No Backend

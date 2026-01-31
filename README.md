@@ -1,6 +1,6 @@
-# Welcome to your Expo app 👋
+# Stationly - From Platform to Pocket �
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A delightful mobile app for checking real-time London Underground, DLR, and Elizabeth Line train arrivals.
 
 ## Get started
 

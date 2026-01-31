@@ -1,8 +1,9 @@
-# tfl-me - Technical Specification
+# Stationly - Technical Specification
 
 ## Project Overview
 
-**Project Name**: tfl-me  
+**Project Name**: Stationly  
+**Tagline**: From Platform to Pocket  
 **Version**: 1.0.0  
 **Last Updated**: January 31, 2026  
 **Platform**: Mobile (iOS/Android) via React Native/Expo  
