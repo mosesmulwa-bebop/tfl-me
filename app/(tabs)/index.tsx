@@ -1,22 +1,29 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
-import {
-  StyleSheet,
-  TextInput,
-  View,
-  FlatList,
-  TouchableOpacity,
-  ActivityIndicator,
-  Text,
-  Image,
-  Animated,
-  ScrollView,
-} from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LINE_COLORS } from '@/constants/tfl';
+import { formatTimeToStation, getStationArrivals, groupArrivalsByLine } from '@/services/api/arrivals';
+import { getAllLineStatus } from '@/services/api/disruptions';
 import { searchStations } from '@/services/api/stations';
+import { Arrival } from '@/types/arrival';
+import { LineStatus } from '@/types/disruption';
 import { Station } from '@/types/station';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Animated,
+  FlatList,
+  Image,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 const RECENT_SEARCHES_KEY = '@stationly:recent_searches';
 const MAX_RECENT_SEARCHES = 5;
+const AUTO_REFRESH_INTERVAL = 30000; // 30 seconds
 
 // Transport Mode Badge Component
 const TransportModeBadge = ({ mode }: { mode: string }) => {
@@ -42,6 +49,24 @@ const TransportModeBadge = ({ mode }: { mode: string }) => {
   );
 };
 
+// Arrival Item Component
+const ArrivalItem = ({ arrival }: { arrival: Arrival }) => {
+  const lineColor = LINE_COLORS[arrival.lineId] || '#8B7355';
+  
+  return (
+    <View style={styles.arrivalItem}>
+      <View style={[styles.lineIndicator, { backgroundColor: lineColor }]} />
+      <View style={styles.arrivalContent}>
+        <View style={styles.arrivalHeader}>
+          <Text style={styles.arrivalDestination}>{arrival.destinationName}</Text>
+          <Text style={styles.arrivalTime}>{formatTimeToStation(arrival.timeToStation)}</Text>
+        </View>
+        <Text style={styles.arrivalPlatform}>{arrival.platformName}</Text>
+      </View>
+    </View>
+  );
+};
+
 export default function HomeScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [stations, setStations] = useState<Station[]>([]);
@@ -50,19 +75,53 @@ export default function HomeScreen() {
   const [error, setError] = useState<string | null>(null);
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [showRecentSearches, setShowRecentSearches] = useState(true);
+  
+  // Arrivals state
+  const [arrivals, setArrivals] = useState<Arrival[]>([]);
+  const [loadingArrivals, setLoadingArrivals] = useState(false);
+  const [arrivalsError, setArrivalsError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  
+  // Line status state
+  const [lineStatuses, setLineStatuses] = useState<LineStatus[]>([]);
 
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
 
   // Load recent searches on mount
   useEffect(() => {
     loadRecentSearches();
+    loadLineStatus();
   }, []);
+
+  // Load arrivals when station is selected
+  useEffect(() => {
+    if (selectedStation) {
+      fetchArrivals(selectedStation.id);
+      // Set up auto-refresh
+      refreshIntervalRef.current = setInterval(() => {
+        fetchArrivals(selectedStation.id, true);
+      }, AUTO_REFRESH_INTERVAL);
+    } else {
+      // Clear arrivals and stop refresh when no station selected
+      setArrivals([]);
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
+    }
+
+    return () => {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
+    };
+  }, [selectedStation]);
 
   // Animate search results
   useEffect(() => {
-    if (stations.length > 0 || recentSearches.length > 0) {
+    if (stations.length > 0 || recentSearches.length > 0 || arrivals.length > 0) {
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 1,
@@ -76,7 +135,7 @@ export default function HomeScreen() {
         }),
       ]).start();
     }
-  }, [stations, recentSearches]);
+  }, [stations, recentSearches, arrivals]);
 
   const loadRecentSearches = async () => {
     try {
@@ -91,7 +150,6 @@ export default function HomeScreen() {
 
   const saveRecentSearch = async (station: Station) => {
     try {
-      // Remove duplicates and add to front
       const filtered = recentSearches.filter((s) => s.id !== station.id);
       const updated = [station, ...filtered].slice(0, MAX_RECENT_SEARCHES);
       await AsyncStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
@@ -110,13 +168,48 @@ export default function HomeScreen() {
     }
   };
 
-  // Debounced search with 300ms delay
+  const loadLineStatus = async () => {
+    try {
+      const statuses = await getAllLineStatus();
+      setLineStatuses(statuses);
+    } catch (err) {
+      console.error('Failed to load line status:', err);
+    }
+  };
+
+  const fetchArrivals = async (stationId: string, silent = false) => {
+    if (!silent) {
+      setLoadingArrivals(true);
+    }
+    setArrivalsError(null);
+
+    try {
+      const arrivalsData = await getStationArrivals(stationId);
+      setArrivals(arrivalsData);
+    } catch (err) {
+      setArrivalsError(err instanceof Error ? err.message : 'Failed to load arrivals');
+      setArrivals([]);
+    } finally {
+      setLoadingArrivals(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    if (!selectedStation) return;
+    
+    setRefreshing(true);
+    await Promise.all([
+      fetchArrivals(selectedStation.id, true),
+      loadLineStatus(),
+    ]);
+    setRefreshing(false);
+  };
+
   const handleSearch = useCallback((text: string) => {
     setSearchQuery(text);
     setError(null);
     setShowRecentSearches(text.trim().length === 0);
 
-    // Clear existing timeout
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
@@ -129,7 +222,6 @@ export default function HomeScreen() {
 
     setLoading(true);
 
-    // Set new timeout for debouncing
     searchTimeoutRef.current = setTimeout(async () => {
       try {
         const results = await searchStations(text);
@@ -151,13 +243,8 @@ export default function HomeScreen() {
     saveRecentSearch(station);
   };
 
-  const renderStationItem = ({ item, index }: { item: Station; index: number }) => (
-    <Animated.View
-      style={{
-        opacity: fadeAnim,
-        transform: [{ translateY: slideAnim }],
-      }}
-    >
+  const renderStationItem = ({ item }: { item: Station }) => (
+    <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
       <TouchableOpacity
         style={styles.resultItem}
         onPress={() => handleSelectStation(item)}
@@ -175,8 +262,21 @@ export default function HomeScreen() {
     </Animated.View>
   );
 
+  const groupedArrivals = groupArrivalsByLine(arrivals);
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    <ScrollView 
+      style={styles.container} 
+      contentContainerStyle={styles.contentContainer}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          tintColor="#9364CD"
+          colors={['#9364CD']}
+        />
+      }
+    >
       {/* Logo Header */}
       <View style={styles.header}>
         <Image
@@ -238,8 +338,58 @@ export default function HomeScreen() {
               ))}
             </View>
           </View>
-          <Text style={styles.stationId}>Station ID: {selectedStation.id}</Text>
         </Animated.View>
+      )}
+
+      {/* Arrivals Section */}
+      {selectedStation && (
+        <View style={styles.arrivalsSection}>
+          <View style={styles.arrivalsSectionHeader}>
+            <Text style={styles.sectionTitle}>Live Arrivals</Text>
+            <Text style={styles.refreshHint}>Pull down to refresh</Text>
+          </View>
+
+          {loadingArrivals && !refreshing && (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#9364CD" />
+              <Text style={styles.loadingText}>Loading arrivals...</Text>
+            </View>
+          )}
+
+          {arrivalsError && (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>❌ {arrivalsError}</Text>
+            </View>
+          )}
+
+          {!loadingArrivals && !arrivalsError && arrivals.length === 0 && (
+            <View style={styles.emptyArrivals}>
+              <Text style={styles.emptyArrivalsIcon}>🚇</Text>
+              <Text style={styles.emptyArrivalsText}>No upcoming arrivals</Text>
+            </View>
+          )}
+
+          {!loadingArrivals && arrivals.length > 0 && (
+            <View>
+              {Object.entries(groupedArrivals).map(([lineName, lineArrivals]) => {
+                const lineId = lineArrivals[0].lineId;
+                const lineColor = LINE_COLORS[lineId] || '#8B7355';
+                
+                return (
+                  <Animated.View key={lineName} style={{ opacity: fadeAnim }}>
+                    <View style={[styles.lineHeader, { backgroundColor: lineColor + '20' }]}>
+                      <View style={[styles.lineColorDot, { backgroundColor: lineColor }]} />
+                      <Text style={styles.lineName}>{lineName}</Text>
+                    </View>
+                    {lineArrivals.slice(0, 3).map((arrival, index) => (
+                      <ArrivalItem key={`${arrival.id}-${arrival.platformName}-${arrival.timeToStation}-${index}`} arrival={arrival} />
+                    ))}
+                  </Animated.View>
+                );
+              })}
+            </View>
+          )}
+        </View>
       )}
 
       {/* Search Results */}
@@ -276,6 +426,7 @@ export default function HomeScreen() {
       {/* Empty State */}
       {!loading &&
         !error &&
+        !selectedStation &&
         stations.length === 0 &&
         searchQuery.length === 0 &&
         recentSearches.length === 0 && (
@@ -283,7 +434,7 @@ export default function HomeScreen() {
             <Text style={styles.emptyStateIcon}>🔍</Text>
             <Text style={styles.emptyStateTitle}>Start Searching</Text>
             <Text style={styles.emptyStateText}>
-              Search for any London Underground, DLR, or Elizabeth Line station to get started
+              Search for any London Underground, DLR, or Elizabeth Line station to see live arrivals
             </Text>
           </View>
         )}
@@ -397,11 +548,6 @@ const styles = StyleSheet.create({
   stationDetails: {
     marginBottom: 8,
   },
-  stationId: {
-    fontSize: 12,
-    color: '#8B7355',
-    marginTop: 8,
-  },
   resultsSection: {
     marginBottom: 20,
   },
@@ -487,5 +633,98 @@ const styles = StyleSheet.create({
     color: '#8B7355',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  // Arrivals styles
+  arrivalsSection: {
+    marginBottom: 20,
+  },
+  arrivalsSectionHeader: {
+    marginBottom: 16,
+  },
+  refreshHint: {
+    fontSize: 12,
+    color: '#8B7355',
+    marginTop: 4,
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    color: '#8B7355',
+    fontSize: 14,
+  },
+  emptyArrivals: {
+    padding: 40,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E0CFFC',
+  },
+  emptyArrivalsIcon: {
+    fontSize: 48,
+    marginBottom: 12,
+  },
+  emptyArrivalsText: {
+    fontSize: 16,
+    color: '#8B7355',
+  },
+  lineHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+    marginTop: 8,
+  },
+  lineColorDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  lineName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#5C4B37',
+  },
+  arrivalItem: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    marginBottom: 8,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E0CFFC',
+    flexDirection: 'row',
+  },
+  lineIndicator: {
+    width: 4,
+  },
+  arrivalContent: {
+    flex: 1,
+    padding: 12,
+  },
+  arrivalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  arrivalDestination: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#5C4B37',
+    flex: 1,
+  },
+  arrivalTime: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#9364CD',
+  },
+  arrivalPlatform: {
+    fontSize: 13,
+    color: '#8B7355',
   },
 });
