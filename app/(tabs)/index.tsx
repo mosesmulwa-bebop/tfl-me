@@ -3,7 +3,8 @@ import {
   checkStationDisambiguation,
   formatTimeToStation,
   getStationArrivals,
-  groupArrivalsByLine
+  groupArrivalsByLine,
+  groupArrivalsByPlatform
 } from '@/services/api/arrivals';
 import { getAllLineStatus } from '@/services/api/disruptions';
 import { searchStations } from '@/services/api/stations';
@@ -66,7 +67,6 @@ const ArrivalItem = ({ arrival }: { arrival: Arrival }) => {
           <Text style={styles.arrivalDestination}>{arrival.destinationName}</Text>
           <Text style={styles.arrivalTime}>{formatTimeToStation(arrival.timeToStation)}</Text>
         </View>
-        <Text style={styles.arrivalPlatform}>{arrival.platformName}</Text>
       </View>
     </View>
   );
@@ -430,15 +430,35 @@ export default function HomeScreen() {
                 const lineId = lineArrivals[0].lineId;
                 const lineColor = LINE_COLORS[lineId] || '#8B7355';
                 
+                // Group arrivals within this line by platform
+                const platformGroups = groupArrivalsByPlatform(lineArrivals);
+                
                 return (
                   <Animated.View key={lineName} style={{ opacity: fadeAnim }}>
+                    {/* Line Header */}
                     <View style={[styles.lineHeader, { backgroundColor: lineColor + '20' }]}>
                       <View style={[styles.lineColorDot, { backgroundColor: lineColor }]} />
                       <Text style={styles.lineName}>{lineName}</Text>
                     </View>
-                    {lineArrivals.slice(0, 3).map((arrival, index) => (
-                      <ArrivalItem key={`${arrival.id}-${arrival.platformName}-${arrival.timeToStation}-${index}`} arrival={arrival} />
-                    ))}
+                    
+                    {/* Platform sections within this line */}
+                    {Object.entries(platformGroups).map(([platformName, platformArrivals]) => {
+                      const direction = platformArrivals[0].towards || platformArrivals[0].destinationName;
+                      
+                      return (
+                        <View key={`${lineName}-${platformName}`}>
+                          <View style={[styles.platformHeader, { borderLeftColor: lineColor }]}>
+                            <View style={styles.platformHeaderContent}>
+                              <Text style={styles.platformName}>{platformName}</Text>
+                              <Text style={styles.platformDirection}>→ {direction}</Text>
+                            </View>
+                          </View>
+                          {platformArrivals.slice(0, 3).map((arrival, index) => (
+                            <ArrivalItem key={`${arrival.id}-${arrival.platformName}-${arrival.timeToStation}-${index}`} arrival={arrival} />
+                          ))}
+                        </View>
+                      );
+                    })}
                   </Animated.View>
                 );
               })}
@@ -725,6 +745,40 @@ const styles = StyleSheet.create({
   emptyArrivalsText: {
     fontSize: 16,
     color: '#8B7355',
+  },
+  platformHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    backgroundColor: '#F8F5FF',
+    borderRadius: 12,
+    marginBottom: 8,
+    marginTop: 8,
+    borderLeftWidth: 4,
+  },
+  platformHeaderContent: {
+    flex: 1,
+  },
+  platformName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#5C4B37',
+    marginBottom: 2,
+  },
+  platformDirection: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#8B7355',
+  },
+  platformLine: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#9364CD',
+    backgroundColor: '#E0CFFC',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
   lineHeader: {
     flexDirection: 'row',
