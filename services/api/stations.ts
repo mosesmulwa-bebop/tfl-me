@@ -107,40 +107,90 @@ export const searchStations = async (query: string): Promise<Station[]> => {
     }
 
     // Transform TfL API response to our Station model
-    const stations: Station[] = matches
-      .filter((match) => {
-        // Only include stations with our target transport modes
-        const hasValidMode = match.modes?.some((mode: string) => 
-          TRANSPORT_MODES.includes(mode as any)
-        );
+    const stations: Station[] = [];
+    
+    for (const match of matches) {
+      // Only include stations with our target transport modes
+      const hasValidMode = match.modes?.some((mode: string) => 
+        TRANSPORT_MODES.includes(mode as any)
+      );
+      
+      if (!hasValidMode) {
+        continue;
+      }
+      
+      // Check if this has a valid TfL station ID format
+      // Valid formats: 940GZZLU... (Underground), 940GZZDL... (DLR), 910G... (Elizabeth line)
+      const hasValidId = /^(940GZZ(LU|DL)|910G)/i.test(match.id);
+      
+      if (hasValidId) {
+        // Valid station ID - add it
+        stations.push({
+          id: match.id,
+          name: match.name || match.commonName,
+          modes: match.modes || [],
+          lat: match.lat,
+          lon: match.lon,
+        });
+      } else {
+        // Invalid ID format (like HUBBAN) - this is likely a parent station
+        // Fetch the child stations that have valid IDs
+        console.log(`🔄 Found parent station ${match.name} (${match.id}), fetching child stations...`);
         
-        if (!hasValidMode) {
-          return false;
+        try {
+          const childStations = await getChildStations(match.id);
+          stations.push(...childStations);
+        } catch (error) {
+          console.warn(`Failed to get child stations for ${match.id}:`, error);
         }
-        
-        // Only include stations with valid TfL station ID formats
-        // Valid formats: 940GZZLU... (Underground), 940GZZDL... (DLR), 910G... (Elizabeth line)
-        // This filters out parent station codes like HUBBAN that don't work with Arrivals API
-        const hasValidId = /^(940GZZ(LU|DL)|910G)/i.test(match.id);
-        
-        if (!hasValidId) {
-          console.log(`🚫 Filtered out station with invalid ID format: ${match.name} (${match.id})`);
-        }
-        
-        return hasValidId;
-      })
-      .map((match) => ({
-        id: match.id,
-        name: match.name || match.commonName,
-        modes: match.modes || [],
-        lat: match.lat,
-        lon: match.lon,
-      }));
+      }
+    }
 
     return stations;
   } catch (error) {
     console.error('Error searching stations:', error);
     throw error;
+  }
+};
+
+/**
+ * Get child stations for a parent station ID (like HUBBAN)
+ * Parent stations don't work with the Arrivals API, but their children do
+ */
+const getChildStations = async (parentId: string): Promise<Station[]> => {
+  try {
+    // Get the parent station details which includes child stations
+    const response = await tflClient.get<TflStopPoint>(`/StopPoint/${parentId}`);
+    const data = response.data;
+    
+    // Check if this station has children
+    if (!data.children || data.children.length === 0) {
+      console.log(`No child stations found for ${parentId}`);
+      return [];
+    }
+    
+    // Filter and map child stations that have valid IDs and modes
+    const childStations: Station[] = data.children
+      .filter((child: any) => {
+        const hasValidId = /^(940GZZ(LU|DL)|910G)/i.test(child.id);
+        const hasValidMode = child.modes?.some((mode: string) => 
+          TRANSPORT_MODES.includes(mode as any)
+        );
+        return hasValidId && hasValidMode;
+      })
+      .map((child: any) => ({
+        id: child.id,
+        name: child.commonName || child.name,
+        modes: child.modes || [],
+        lat: child.lat,
+        lon: child.lon,
+      }));
+    
+    console.log(`✅ Found ${childStations.length} child stations for ${data.commonName} (${parentId})`);
+    return childStations;
+  } catch (error) {
+    console.error(`Error fetching child stations for ${parentId}:`, error);
+    return [];
   }
 };
 

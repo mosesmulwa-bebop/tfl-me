@@ -17,6 +17,7 @@ export interface TflStopPoint {
   status?: boolean;
   lat?: number;
   lon?: number;
+  children?: TflStopPoint[]; // Child stations (e.g., Bank has Bank Underground and Bank DLR as children)
 }
 
 export interface TflLine {
