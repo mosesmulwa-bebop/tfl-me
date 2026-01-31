@@ -1,5 +1,10 @@
 import { LINE_COLORS } from '@/constants/tfl';
-import { formatTimeToStation, getStationArrivals, groupArrivalsByLine } from '@/services/api/arrivals';
+import {
+  checkStationDisambiguation,
+  formatTimeToStation,
+  getStationArrivals,
+  groupArrivalsByLine
+} from '@/services/api/arrivals';
 import { getAllLineStatus } from '@/services/api/disruptions';
 import { searchStations } from '@/services/api/stations';
 import { Arrival } from '@/types/arrival';
@@ -75,6 +80,10 @@ export default function HomeScreen() {
   const [error, setError] = useState<string | null>(null);
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [showRecentSearches, setShowRecentSearches] = useState(true);
+  
+  // Disambiguation state for stations with multiple options (e.g., Bank Underground vs Bank DLR)
+  const [disambiguationOptions, setDisambiguationOptions] = useState<Station[]>([]);
+  const [showDisambiguation, setShowDisambiguation] = useState(false);
   
   // Arrivals state
   const [arrivals, setArrivals] = useState<Arrival[]>([]);
@@ -186,8 +195,28 @@ export default function HomeScreen() {
     try {
       const arrivalsData = await getStationArrivals(stationId);
       setArrivals(arrivalsData);
+      setShowDisambiguation(false); // Clear any disambiguation UI
     } catch (err) {
-      setArrivalsError(err instanceof Error ? err.message : 'Failed to load arrivals');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load arrivals';
+      
+      // Check if error is about multiple stations (disambiguation needed)
+      if (errorMessage.includes('Multiple stations found')) {
+        // Try to get alternatives
+        try {
+          const resolution = await checkStationDisambiguation(stationId);
+          if (resolution.alternatives && resolution.alternatives.length > 0) {
+            setDisambiguationOptions(resolution.alternatives);
+            setShowDisambiguation(true);
+            setArrivalsError('Please select which station you want');
+          } else {
+            setArrivalsError(errorMessage);
+          }
+        } catch {
+          setArrivalsError(errorMessage);
+        }
+      } else {
+        setArrivalsError(errorMessage);
+      }
       setArrivals([]);
     } finally {
       setLoadingArrivals(false);
@@ -359,6 +388,32 @@ export default function HomeScreen() {
           {arrivalsError && (
             <View style={styles.errorContainer}>
               <Text style={styles.errorText}>❌ {arrivalsError}</Text>
+              
+              {/* Show disambiguation options if multiple stations found */}
+              {showDisambiguation && disambiguationOptions.length > 0 && (
+                <View style={styles.disambiguationContainer}>
+                  <Text style={styles.disambiguationTitle}>Select a station:</Text>
+                  {disambiguationOptions.map((option) => (
+                    <TouchableOpacity
+                      key={option.id}
+                      style={styles.disambiguationOption}
+                      onPress={() => {
+                        handleSelectStation(option);
+                      }}
+                    >
+                      <View style={styles.disambiguationContent}>
+                        <Text style={styles.disambiguationName}>{option.name}</Text>
+                        <View style={styles.modesContainer}>
+                          {option.modes.map((mode, idx) => (
+                            <TransportModeBadge key={idx} mode={mode} />
+                          ))}
+                        </View>
+                      </View>
+                      <Text style={styles.disambiguationId}>ID: {option.id}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
           )}
 
@@ -726,5 +781,39 @@ const styles = StyleSheet.create({
   arrivalPlatform: {
     fontSize: 13,
     color: '#8B7355',
+  },
+  disambiguationContainer: {
+    marginTop: 16,
+    backgroundColor: '#F8F5FF',
+    borderRadius: 12,
+    padding: 16,
+  },
+  disambiguationTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#5C4B37',
+    marginBottom: 12,
+  },
+  disambiguationOption: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E0CFFC',
+  },
+  disambiguationContent: {
+    marginBottom: 8,
+  },
+  disambiguationName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#5C4B37',
+    marginBottom: 6,
+  },
+  disambiguationId: {
+    fontSize: 12,
+    color: '#8B7355',
+    fontStyle: 'italic',
   },
 });

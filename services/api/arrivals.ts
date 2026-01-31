@@ -1,28 +1,69 @@
 import { TflArrival } from '@/types/api';
 import { Arrival } from '@/types/arrival';
 import { tflClient } from './client';
+import { resolveStationId, type StationResolutionResult } from './stations';
+
+// Re-export for convenience
+export type { StationResolutionResult };
 
 /**
  * Get real-time arrivals for a specific station
+ * Automatically resolves shortcodes and station names to proper TfL station IDs
  * Returns trains arriving at the station sorted by time
+ * 
+ * @throws Error if station cannot be resolved or if multiple stations found (disambiguation needed)
  */
 export const getStationArrivals = async (stationId: string): Promise<Arrival[]> => {
   try {
-    const response = await tflClient.get<TflArrival[]>(`/StopPoint/${stationId}/Arrivals`);
+    // Resolve station ID (handles shortcodes, names, etc.)
+    const resolution = await resolveStationId(stationId);
+    
+    if (!resolution.success) {
+      if (resolution.alternatives && resolution.alternatives.length > 0) {
+        // Multiple stations found - throw error with alternatives
+        const alternativesList = resolution.alternatives
+          .map(s => `- ${s.name} (${s.id}) - ${s.modes.join(', ')}`)
+          .join('\n');
+        
+        throw new Error(
+          `Multiple stations found for "${stationId}":\n${alternativesList}\n\nPlease specify which station you want.`
+        );
+      }
+      
+      throw new Error(resolution.error || 'Failed to resolve station');
+    }
 
-    console.log(`Arrivals for ${stationId}:`, response.data.length, 'trains');
+    const resolvedStationId = resolution.station!.id;
+    
+    const response = await tflClient.get<TflArrival[]>(`/StopPoint/${resolvedStationId}/Arrivals`);
+
+    console.log(`Arrivals for ${resolvedStationId}:`, response.data.length, 'trains');
+    
+    // Log all modes if no trains found to help debug
+    if (response.data.length === 0) {
+      console.warn(`⚠️ No arrivals found for station ${resolvedStationId}. This may be normal if no trains are currently scheduled.`);
+    } else if (response.data.length > 0) {
+      const modes = [...new Set(response.data.map(a => a.modeName))];
+      console.log(`Available modes at ${resolvedStationId}:`, modes);
+    }
 
     // Transform TfL API response to our Arrival model
     const arrivals: Arrival[] = response.data
       .filter((arrival) => {
         // Only include our target transport modes
         const modeName = arrival.modeName?.toLowerCase();
-        return (
+        const isRelevantMode = (
           modeName === 'tube' ||
           modeName === 'dlr' ||
           modeName === 'elizabeth line' ||
           modeName === 'elizabeth-line'
         );
+        
+        if (!isRelevantMode) {
+          console.log(`🔍 Filtered out arrival: ${arrival.destinationName} (mode: "${arrival.modeName}", line: ${arrival.lineName})`);
+        }
+        
+        return isRelevantMode;
       })
       .map((arrival) => ({
         id: arrival.id,
@@ -38,11 +79,23 @@ export const getStationArrivals = async (stationId: string): Promise<Arrival[]> 
       }))
       .sort((a, b) => a.timeToStation - b.timeToStation); // Sort by nearest first
 
+    console.log(`✅ Returning ${arrivals.length} arrivals after filtering`);
     return arrivals;
   } catch (error) {
     console.error('Error fetching station arrivals:', error);
     throw error;
   }
+};
+
+/**
+ * Check if a station ID needs disambiguation (returns multiple options)
+ * Use this before calling getStationArrivals to handle cases like "Bank"
+ * which could be Bank Underground or Bank DLR
+ */
+export const checkStationDisambiguation = async (
+  stationId: string
+): Promise<StationResolutionResult> => {
+  return await resolveStationId(stationId);
 };
 
 /**
