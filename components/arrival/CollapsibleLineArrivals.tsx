@@ -11,6 +11,7 @@ interface CollapsibleLineArrivalsProps {
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
   persistCollapse?: boolean;
+  onDragStart?: () => void;
 }
 
 /**
@@ -40,6 +41,7 @@ export const CollapsibleLineArrivals: React.FC<CollapsibleLineArrivalsProps> = (
   isCollapsed: externalIsCollapsed,
   onToggleCollapse,
   persistCollapse = false,
+  onDragStart,
 }) => {
   const [internalIsCollapsed, setInternalIsCollapsed] = useState(false);
   
@@ -60,7 +62,11 @@ export const CollapsibleLineArrivals: React.FC<CollapsibleLineArrivalsProps> = (
   return (
     <View style={styles.lineGroup}>
       {/* Collapsible Header */}
-      <Pressable style={styles.lineHeader} onPress={handleToggle}>
+      <Pressable 
+        style={styles.lineHeader} 
+        onPress={handleToggle}
+        onLongPress={onDragStart}
+      >
         <View style={styles.lineHeaderLeft}>
           <View style={[styles.lineColorBar, { backgroundColor: lineColor }]} />
           <View>

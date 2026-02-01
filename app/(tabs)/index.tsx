@@ -3,6 +3,7 @@ import { DisruptionBanner } from '@/components/disruption/DisruptionBanner';
 import { DisruptionCard } from '@/components/disruption/DisruptionCard';
 import { StationCard } from '@/components/station/StationCard';
 import { clearCollapsedLines, getCollapsedLines, saveCollapsedLines } from '@/services/storage/collapsedLines';
+import { getLineOrder, saveLineOrder } from '@/services/storage/lineOrder';
 import { useArrivalsStore } from '@/store/arrivalsStore';
 import { useDisruptionsStore } from '@/store/disruptionsStore';
 import { useFavoritesStore } from '@/store/favoritesStore';
@@ -18,14 +19,22 @@ import {
   Text,
   View,
 } from 'react-native';
+import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
 
 /**
  * Home Screen - Displays main station with real-time arrivals and relevant disruptions
  */
+type LineGroup = {
+  lineId: string;
+  lineName: string;
+  arrivals: Arrival[];
+};
+
 export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
   const [collapsedLines, setCollapsedLines] = useState<string[]>([]);
+  const [lineOrder, setLineOrder] = useState<string[]>([]);
   const previousMainStationId = useRef<string | null>(null);
   const router = useRouter();
 
@@ -57,7 +66,7 @@ export default function HomeScreen() {
     fetchLineStatus();
   }, []);
 
-  // Load collapsed lines when main station changes
+  // Load collapsed lines and line order when main station changes
   useEffect(() => {
     const loadCollapsedState = async () => {
       if (mainStation) {
@@ -67,9 +76,11 @@ export default function HomeScreen() {
           setCollapsedLines([]);
         }
         
-        // Load collapsed state for current main station
+        // Load collapsed state and line order for current main station
         const collapsed = await getCollapsedLines(mainStation.id);
+        const savedOrder = await getLineOrder(mainStation.id);
         setCollapsedLines(collapsed);
+        setLineOrder(savedOrder);
         previousMainStationId.current = mainStation.id;
       }
     };
@@ -108,14 +119,45 @@ export default function HomeScreen() {
 
   const mainStationArrivals = mainStation ? arrivals[mainStation.id] || [] : [];
 
-  // Group arrivals by line
-  const arrivalsByLine = mainStationArrivals.reduce((acc, arrival) => {
-    if (!acc[arrival.lineName]) {
-      acc[arrival.lineName] = [];
+  // Group arrivals by line and apply saved order
+  const orderedLineGroups = useMemo(() => {
+    const arrivalsByLine = mainStationArrivals.reduce((acc, arrival) => {
+      if (!acc[arrival.lineName]) {
+        acc[arrival.lineName] = {
+          lineId: arrival.lineId,
+          lineName: arrival.lineName,
+          arrivals: [],
+        };
+      }
+      acc[arrival.lineName].arrivals.push(arrival);
+      return acc;
+    }, {} as Record<string, LineGroup>);
+
+    const lineGroups = Object.values(arrivalsByLine);
+
+    // Apply saved order if it exists
+    if (lineOrder.length > 0) {
+      const orderedGroups: LineGroup[] = [];
+      const unorderedGroups: LineGroup[] = [];
+
+      // First, add lines in the saved order
+      lineOrder.forEach(lineId => {
+        const group = lineGroups.find(g => g.lineId === lineId);
+        if (group) orderedGroups.push(group);
+      });
+
+      // Then add any new lines that aren't in the saved order
+      lineGroups.forEach(group => {
+        if (!lineOrder.includes(group.lineId)) {
+          unorderedGroups.push(group);
+        }
+      });
+
+      return [...orderedGroups, ...unorderedGroups];
     }
-    acc[arrival.lineName].push(arrival);
-    return acc;
-  }, {} as Record<string, Arrival[]>);
+
+    return lineGroups;
+  }, [mainStationArrivals, lineOrder]);
 
   // Handle line collapse toggle
   const handleToggleLineCollapse = async (lineId: string) => {
@@ -128,6 +170,72 @@ export default function HomeScreen() {
     setCollapsedLines(newCollapsedLines);
     await saveCollapsedLines(mainStation.id, newCollapsedLines);
   };
+
+  // Handle line reorder
+  const handleDragEnd = async (data: LineGroup[]) => {
+    if (!mainStation) return;
+    
+    const newOrder = data.map(group => group.lineId);
+    setLineOrder(newOrder);
+    await saveLineOrder(mainStation.id, newOrder);
+  };
+
+  // Render draggable line item
+  const renderLineItem = ({ item, drag, isActive }: RenderItemParams<LineGroup>) => {
+    return (
+      <ScaleDecorator>
+        <View style={[styles.draggableItem, isActive && styles.draggableItemActive]}>
+          <CollapsibleLineArrivals
+            lineName={item.lineName}
+            lineId={item.lineId}
+            arrivals={item.arrivals}
+            isCollapsed={collapsedLines.includes(item.lineId)}
+            onToggleCollapse={() => handleToggleLineCollapse(item.lineId)}
+            persistCollapse={true}
+            onDragStart={drag}
+          />
+        </View>
+      </ScaleDecorator>
+    );
+  };
+
+  // Render header with all content above arrivals
+  const renderListHeader = () => (
+    <View>
+      {/* General Disruption Banner (major system-wide issues) */}
+      {allDisruptedLines.length > 0 && stationDisruptions.length === 0 && (
+        <DisruptionBanner 
+          disruptedLines={allDisruptedLines} 
+          onPress={() => router.push('/disruptions')}
+        />
+      )}
+
+      {/* Main Station Card */}
+      <View style={styles.mainStationSection}>
+        <Text style={styles.sectionTitle}>Your Main Station</Text>
+        <StationCard station={mainStation!} showMainBadge={false} />
+      </View>
+
+      {/* Station-Specific Disruptions */}
+      {stationDisruptions.length > 0 && (
+        <View style={styles.disruptionsSection}>
+          <Text style={styles.sectionTitle}>⚠️ Service Alerts</Text>
+          {stationDisruptions.map((disruption) => (
+            <DisruptionCard key={disruption.lineId} lineStatus={disruption} />
+          ))}
+        </View>
+      )}
+
+      {/* Arrivals Section Header */}
+      <View style={styles.arrivalsSection}>
+        <View style={styles.arrivalsSectionHeader}>
+          <Text style={styles.sectionTitle}>Live Arrivals</Text>
+          {arrivalsLoading && <ActivityIndicator size="small" color="#B8E6D5" />}
+        </View>
+        <Text style={styles.dragHint}>💡 Long press any line header to reorder</Text>
+      </View>
+    </View>
+  );
 
   if (favoritesLoading) {
     return (
@@ -162,60 +270,29 @@ export default function HomeScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-    >
-      {/* General Disruption Banner (major system-wide issues) */}
-      {allDisruptedLines.length > 0 && stationDisruptions.length === 0 && (
-        <DisruptionBanner 
-          disruptedLines={allDisruptedLines} 
-          onPress={() => router.push('/disruptions')}
-        />
-      )}
-
-      {/* Main Station Card */}
-      <View style={styles.mainStationSection}>
-        <Text style={styles.sectionTitle}>Your Main Station</Text>
-        <StationCard station={mainStation} showMainBadge={false} />
-      </View>
-
-      {/* Station-Specific Disruptions */}
-      {stationDisruptions.length > 0 && (
-        <View style={styles.disruptionsSection}>
-          <Text style={styles.sectionTitle}>⚠️ Service Alerts</Text>
-          {stationDisruptions.map((disruption) => (
-            <DisruptionCard key={disruption.lineId} lineStatus={disruption} />
-          ))}
-        </View>
-      )}
-
-      {/* Arrivals Section */}
-      <View style={styles.arrivalsSection}>
-        <View style={styles.arrivalsSectionHeader}>
-          <Text style={styles.sectionTitle}>Live Arrivals</Text>
-          {arrivalsLoading && <ActivityIndicator size="small" color="#B8E6D5" />}
-        </View>
-
-        {mainStationArrivals.length === 0 && !arrivalsLoading ? (
+    <View style={styles.container}>
+      {mainStationArrivals.length === 0 && !arrivalsLoading ? (
+        <ScrollView
+          style={styles.container}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+        >
+          {renderListHeader()}
           <View style={styles.noArrivals}>
             <Text style={styles.noArrivalsText}>No upcoming arrivals</Text>
           </View>
-        ) : (
-          Object.entries(arrivalsByLine).map(([lineName, lineArrivals]) => (
-            <CollapsibleLineArrivals
-              key={lineArrivals[0].lineId}
-              lineName={lineName}
-              lineId={lineArrivals[0].lineId}
-              arrivals={lineArrivals}
-              isCollapsed={collapsedLines.includes(lineArrivals[0].lineId)}
-              onToggleCollapse={() => handleToggleLineCollapse(lineArrivals[0].lineId)}
-              persistCollapse={true}
-            />
-          ))
-        )}
-      </View>
-    </ScrollView>
+        </ScrollView>
+      ) : (
+        <DraggableFlatList
+          data={orderedLineGroups}
+          onDragEnd={({ data }) => handleDragEnd(data)}
+          keyExtractor={(item) => item.lineId}
+          renderItem={renderLineItem}
+          ListHeaderComponent={renderListHeader}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+          contentContainerStyle={styles.flatListContainer}
+        />
+      )}
+    </View>
   );
 }
 
@@ -301,5 +378,23 @@ const styles = StyleSheet.create({
   noArrivalsText: {
     fontSize: 16,
     color: '#8B7355',
+  },
+  dragHint: {
+    fontSize: 13,
+    color: '#8B7355',
+    textAlign: 'center',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    fontStyle: 'italic',
+  },
+  flatListContainer: {
+    paddingBottom: 16,
+  },
+  draggableItem: {
+    marginBottom: 0,
+  },
+  draggableItemActive: {
+    opacity: 0.8,
+    transform: [{ scale: 1.02 }],
   },
 });
