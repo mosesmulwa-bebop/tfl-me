@@ -12,6 +12,7 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -202,6 +203,15 @@ export default function HomeScreen() {
   // Render header with all content above arrivals
   const renderListHeader = () => (
     <View>
+      {/* App Logo Header */}
+      <View style={styles.header}>
+        <Image
+          source={require('@/assets/images/stationly_with_slogan.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
+      </View>
+
       {/* General Disruption Banner (major system-wide issues) */}
       {allDisruptedLines.length > 0 && stationDisruptions.length === 0 && (
         <DisruptionBanner 
@@ -308,6 +318,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#FFF9F0',
+  },
+  header: {
+    alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 24,
+    paddingHorizontal: 16,
+  },
+  logo: {
+    width: '100%',
+    height: 80,
   },
   loadingText: {
     marginTop: 12,

@@ -1,10 +1,11 @@
 import { StationCard } from '@/components/station/StationCard';
+import { Dialog } from '@/components/ui/dialog';
+import { Toast } from '@/components/ui/toast';
 import { useFavoritesStore } from '@/store/favoritesStore';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -18,6 +19,26 @@ import {
  */
 export default function FavoritesScreen() {
   const [refreshing, setRefreshing] = useState(false);
+  const [dialogConfig, setDialogConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    actions: Array<{ text: string; onPress: () => void; style?: 'default' | 'destructive' | 'cancel' }>;
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    actions: [],
+  });
+  const [toast, setToast] = useState<{
+    visible: boolean;
+    message: string;
+    type: 'success' | 'error' | 'info';
+  }>({
+    visible: false,
+    message: '',
+    type: 'info',
+  });
   const router = useRouter();
 
   const {
@@ -39,45 +60,73 @@ export default function FavoritesScreen() {
   };
 
   const handleSetMain = async (stationId: string, stationName: string) => {
-    Alert.alert(
-      'Set Main Station',
-      `Set ${stationName} as your main station?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
+    setDialogConfig({
+      visible: true,
+      title: 'Set Main Station',
+      message: `Set ${stationName} as your main station?`,
+      actions: [
+        { 
+          text: 'Cancel', 
+          style: 'cancel',
+          onPress: () => {} 
+        },
         {
           text: 'Set as Main',
+          style: 'default',
           onPress: async () => {
             try {
               await setMainStation(stationId);
-              Alert.alert('Success', 'Main station updated!');
+              setToast({
+                visible: true,
+                message: 'Main station updated!',
+                type: 'success',
+              });
             } catch (error) {
-              Alert.alert('Error', 'Failed to set main station');
+              setToast({
+                visible: true,
+                message: 'Failed to set main station',
+                type: 'error',
+              });
             }
           },
         },
-      ]
-    );
+      ],
+    });
   };
 
   const handleRemove = async (stationId: string, stationName: string) => {
-    Alert.alert(
-      'Remove Station',
-      `Remove ${stationName} from favorites?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
+    setDialogConfig({
+      visible: true,
+      title: 'Remove Station',
+      message: `Remove ${stationName} from favorites?`,
+      actions: [
+        { 
+          text: 'Cancel', 
+          style: 'cancel',
+          onPress: () => {} 
+        },
         {
           text: 'Remove',
           style: 'destructive',
           onPress: async () => {
             try {
               await removeFavorite(stationId);
+              setToast({
+                visible: true,
+                message: 'Station removed',
+                type: 'success',
+              });
             } catch (error) {
-              Alert.alert('Error', 'Failed to remove station');
+              setToast({
+                visible: true,
+                message: 'Failed to remove station',
+                type: 'error',
+              });
             }
           },
         },
-      ]
-    );
+      ],
+    });
   };
 
   if (isLoading) {
@@ -172,6 +221,23 @@ export default function FavoritesScreen() {
       >
         <Text style={styles.addMoreButtonText}>+ Add More Stations</Text>
       </Pressable>
+
+      {/* Dialog */}
+      <Dialog
+        visible={dialogConfig.visible}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        actions={dialogConfig.actions}
+        onClose={() => setDialogConfig({ ...dialogConfig, visible: false })}
+      />
+
+      {/* Toast */}
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onHide={() => setToast({ ...toast, visible: false })}
+      />
     </ScrollView>
   );
 }

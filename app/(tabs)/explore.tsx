@@ -21,6 +21,62 @@ import {
 /**
  * Explore Screen - Search stations and view their live arrivals
  */
+
+// Transport Mode Badge Component
+const TransportModeBadge = ({ mode }: { mode: string }) => {
+  const getBadgeStyle = () => {
+    switch (mode) {
+      case 'tube':
+        return { bg: '#E32017', icon: '🚇', label: 'Tube' };
+      case 'dlr':
+        return { bg: '#00A4A7', icon: '🚈', label: 'DLR' };
+      case 'elizabeth-line':
+        return { bg: '#9364CD', icon: '🚆', label: 'Elizabeth' };
+      default:
+        return { bg: '#8B7355', icon: '🚉', label: mode };
+    }
+  };
+
+  const badge = getBadgeStyle();
+
+  return (
+    <View style={[styles.modeBadge, { backgroundColor: badge.bg }]}>
+      <Text style={styles.modeBadgeIcon}>{badge.icon}</Text>
+    </View>
+  );
+};
+
+// Mode Legend Component
+const ModeLegend = () => {
+  const [expanded, setExpanded] = useState(true);
+
+  return (
+    <View style={styles.legendContainer}>
+      <Pressable onPress={() => setExpanded(!expanded)} style={styles.legendToggle}>
+        <Text style={styles.legendToggleText}>
+          {expanded ? '▼' : '▶'} Transport Mode Guide
+        </Text>
+      </Pressable>
+      {expanded && (
+        <View style={styles.legendContent}>
+          <View style={styles.legendItem}>
+            <TransportModeBadge mode="tube" />
+            <Text style={styles.legendText}>London Underground</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <TransportModeBadge mode="elizabeth-line" />
+            <Text style={styles.legendText}>Elizabeth Line</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <TransportModeBadge mode="dlr" />
+            <Text style={styles.legendText}>Docklands Light Railway</Text>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+};
+
 export default function ExploreScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Station[]>([]);
@@ -178,6 +234,9 @@ export default function ExploreScreen() {
           </View>
         </View>
 
+        {/* Transport Mode Legend */}
+        <ModeLegend />
+
         {/* Search Results */}
         {searchResults.length > 0 && (
           <View style={styles.resultsContainer}>
@@ -190,7 +249,11 @@ export default function ExploreScreen() {
               >
                 <View style={styles.stationInfo}>
                   <Text style={styles.stationName}>{station.name}</Text>
-                  <Text style={styles.stationModes}>{station.modes.join(' • ')}</Text>
+                  <View style={styles.modesContainer}>
+                    {station.modes?.map((mode, idx) => (
+                      <TransportModeBadge key={idx} mode={mode} />
+                    ))}
+                  </View>
                 </View>
                 <Text style={styles.viewArrow}>→</Text>
               </Pressable>
@@ -383,10 +446,53 @@ const styles = StyleSheet.create({
     color: '#5C4B37',
     marginBottom: 4,
   },
-  stationModes: {
-    fontSize: 12,
-    color: '#8B7355',
-    textTransform: 'capitalize',
+  modesContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  modeBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  modeBadgeIcon: {
+    fontSize: 16,
+  },
+  legendContainer: {
+    marginBottom: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E0CFFC',
+  },
+  legendToggle: {
+    paddingVertical: 4,
+  },
+  legendToggleText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#5C4B37',
+  },
+  legendContent: {
+    marginTop: 12,
+    gap: 10,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  legendText: {
+    fontSize: 14,
+    color: '#5C4B37',
   },
   viewArrow: {
     fontSize: 20,
