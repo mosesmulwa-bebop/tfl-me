@@ -1,6 +1,5 @@
+import { CollapsibleLineArrivals } from '@/components/arrival/CollapsibleLineArrivals';
 import { DisruptionCard } from '@/components/disruption/DisruptionCard';
-import { LINE_COLORS } from '@/constants/tfl';
-import { formatTimeToStation } from '@/services/api/arrivals';
 import { searchStations } from '@/services/api/stations';
 import { useArrivalsStore } from '@/store/arrivalsStore';
 import { useDisruptionsStore } from '@/store/disruptionsStore';
@@ -267,21 +266,13 @@ export default function ExploreScreen() {
               </View>
             ) : (
               Object.entries(arrivalsByLine).map(([lineName, lineArrivals]) => (
-                <View key={lineName} style={styles.lineGroup}>
-                  <View style={styles.lineHeader}>
-                    <View
-                      style={[
-                        styles.lineColorBar,
-                        { backgroundColor: LINE_COLORS[lineArrivals[0].lineId] || '#8B7355' },
-                      ]}
-                    />
-                    <Text style={styles.lineName}>{lineName}</Text>
-                  </View>
-
-                  {lineArrivals.slice(0, 3).map((arrival, index) => (
-                    <ArrivalItem key={`${arrival.id}-${index}`} arrival={arrival} />
-                  ))}
-                </View>
+                <CollapsibleLineArrivals
+                  key={lineArrivals[0].lineId}
+                  lineName={lineName}
+                  lineId={lineArrivals[0].lineId}
+                  arrivals={lineArrivals}
+                  persistCollapse={false}
+                />
               ))
             )}
           </View>
@@ -301,21 +292,6 @@ export default function ExploreScreen() {
     </ScrollView>
   );
 }
-
-/**
- * Arrival Item Component
- */
-const ArrivalItem: React.FC<{ arrival: Arrival }> = ({ arrival }) => {
-  return (
-    <View style={styles.arrivalItem}>
-      <View style={styles.arrivalLeft}>
-        <Text style={styles.arrivalDestination}>{arrival.destinationName}</Text>
-        {arrival.platformName && <Text style={styles.arrivalPlatform}>{arrival.platformName}</Text>}
-      </View>
-      <Text style={styles.arrivalTime}>{formatTimeToStation(arrival.timeToStation)}</Text>
-    </View>
-  );
-};
 
 const styles = StyleSheet.create({
   container: {
@@ -510,60 +486,6 @@ const styles = StyleSheet.create({
   noArrivalsText: {
     fontSize: 16,
     color: '#8B7355',
-  },
-  lineGroup: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  lineHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  lineColorBar: {
-    width: 4,
-    height: 20,
-    borderRadius: 2,
-    marginRight: 8,
-  },
-  lineName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#5C4B37',
-  },
-  arrivalItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F5F0E8',
-  },
-  arrivalLeft: {
-    flex: 1,
-  },
-  arrivalDestination: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#5C4B37',
-  },
-  arrivalPlatform: {
-    fontSize: 12,
-    color: '#8B7355',
-    marginTop: 2,
-  },
-  arrivalTime: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#5C4B37',
-    marginLeft: 12,
   },
   emptyState: {
     alignItems: 'center',

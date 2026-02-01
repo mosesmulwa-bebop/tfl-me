@@ -1,14 +1,14 @@
+import { CollapsibleLineArrivals } from '@/components/arrival/CollapsibleLineArrivals';
 import { DisruptionBanner } from '@/components/disruption/DisruptionBanner';
 import { DisruptionCard } from '@/components/disruption/DisruptionCard';
 import { StationCard } from '@/components/station/StationCard';
-import { LINE_COLORS } from '@/constants/tfl';
-import { formatTimeToStation } from '@/services/api/arrivals';
+import { clearCollapsedLines, getCollapsedLines, saveCollapsedLines } from '@/services/storage/collapsedLines';
 import { useArrivalsStore } from '@/store/arrivalsStore';
 import { useDisruptionsStore } from '@/store/disruptionsStore';
 import { useFavoritesStore } from '@/store/favoritesStore';
 import { Arrival } from '@/types/arrival';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -25,6 +25,8 @@ import {
 export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  const [collapsedLines, setCollapsedLines] = useState<string[]>([]);
+  const previousMainStationId = useRef<string | null>(null);
   const router = useRouter();
 
   // Zustand stores
@@ -49,11 +51,31 @@ export default function HomeScreen() {
     );
   }, [mainStation, allDisruptedLines]);
 
-  // Load favorites on mount
+  // Load favorites and collapsed lines on mount
   useEffect(() => {
     loadFavorites();
     fetchLineStatus();
   }, []);
+
+  // Load collapsed lines when main station changes
+  useEffect(() => {
+    const loadCollapsedState = async () => {
+      if (mainStation) {
+        // If main station changed, clear collapsed state
+        if (previousMainStationId.current && previousMainStationId.current !== mainStation.id) {
+          await clearCollapsedLines(previousMainStationId.current);
+          setCollapsedLines([]);
+        }
+        
+        // Load collapsed state for current main station
+        const collapsed = await getCollapsedLines(mainStation.id);
+        setCollapsedLines(collapsed);
+        previousMainStationId.current = mainStation.id;
+      }
+    };
+    
+    loadCollapsedState();
+  }, [mainStation?.id]);
 
   // Fetch arrivals for main station
   useEffect(() => {
@@ -94,6 +116,18 @@ export default function HomeScreen() {
     acc[arrival.lineName].push(arrival);
     return acc;
   }, {} as Record<string, Arrival[]>);
+
+  // Handle line collapse toggle
+  const handleToggleLineCollapse = async (lineId: string) => {
+    if (!mainStation) return;
+    
+    const newCollapsedLines = collapsedLines.includes(lineId)
+      ? collapsedLines.filter(id => id !== lineId)
+      : [...collapsedLines, lineId];
+    
+    setCollapsedLines(newCollapsedLines);
+    await saveCollapsedLines(mainStation.id, newCollapsedLines);
+  };
 
   if (favoritesLoading) {
     return (
@@ -169,21 +203,15 @@ export default function HomeScreen() {
           </View>
         ) : (
           Object.entries(arrivalsByLine).map(([lineName, lineArrivals]) => (
-            <View key={lineName} style={styles.lineGroup}>
-              <View style={styles.lineHeader}>
-                <View
-                  style={[
-                    styles.lineColorBar,
-                    { backgroundColor: LINE_COLORS[lineArrivals[0].lineId] || '#8B7355' },
-                  ]}
-                />
-                <Text style={styles.lineName}>{lineName}</Text>
-              </View>
-
-              {lineArrivals.slice(0, 3).map((arrival, index) => (
-                <ArrivalItem key={`${arrival.id}-${index}`} arrival={arrival} />
-              ))}
-            </View>
+            <CollapsibleLineArrivals
+              key={lineArrivals[0].lineId}
+              lineName={lineName}
+              lineId={lineArrivals[0].lineId}
+              arrivals={lineArrivals}
+              isCollapsed={collapsedLines.includes(lineArrivals[0].lineId)}
+              onToggleCollapse={() => handleToggleLineCollapse(lineArrivals[0].lineId)}
+              persistCollapse={true}
+            />
           ))
         )}
       </View>
@@ -191,22 +219,7 @@ export default function HomeScreen() {
   );
 }
 
-/**
- * Arrival Item Component
- */
-const ArrivalItem: React.FC<{ arrival: Arrival }> = ({ arrival }) => {
-  return (
-    <View style={styles.arrivalItem}>
-      <View style={styles.arrivalLeft}>
-        <Text style={styles.arrivalDestination}>{arrival.destinationName}</Text>
-        {arrival.platformName && (
-          <Text style={styles.arrivalPlatform}>{arrival.platformName}</Text>
-        )}
-      </View>
-      <Text style={styles.arrivalTime}>{formatTimeToStation(arrival.timeToStation)}</Text>
-    </View>
-  );
-};
+
 
 const styles = StyleSheet.create({
   container: {
@@ -288,60 +301,5 @@ const styles = StyleSheet.create({
   noArrivalsText: {
     fontSize: 16,
     color: '#8B7355',
-  },
-  lineGroup: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginHorizontal: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  lineHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  lineColorBar: {
-    width: 4,
-    height: 20,
-    borderRadius: 2,
-    marginRight: 8,
-  },
-  lineName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#5C4B37',
-  },
-  arrivalItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F5F0E8',
-  },
-  arrivalLeft: {
-    flex: 1,
-  },
-  arrivalDestination: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#5C4B37',
-  },
-  arrivalPlatform: {
-    fontSize: 12,
-    color: '#8B7355',
-    marginTop: 2,
-  },
-  arrivalTime: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#5C4B37',
-    marginLeft: 12,
   },
 });
