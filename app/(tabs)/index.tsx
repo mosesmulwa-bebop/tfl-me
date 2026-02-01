@@ -94,8 +94,8 @@ export default function HomeScreen() {
   // Line status state
   const [lineStatuses, setLineStatuses] = useState<LineStatus[]>([]);
 
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const searchTimeoutRef = useRef<number | null>(null);
+  const refreshIntervalRef = useRef<number | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
 
@@ -343,6 +343,19 @@ export default function HomeScreen() {
         </Animated.View>
       )}
 
+      {/* Search Results - Show above selected station when searching */}
+      {stations.length > 0 && (
+        <View style={styles.resultsSection}>
+          <Text style={styles.sectionTitle}>Search Results</Text>
+          <FlatList
+            data={stations}
+            keyExtractor={(item) => item.id}
+            renderItem={renderStationItem}
+            scrollEnabled={false}
+          />
+        </View>
+      )}
+
       {/* Selected Station Card */}
       {selectedStation && (
         <Animated.View style={[styles.selectedCard, { opacity: fadeAnim }]}>
@@ -464,19 +477,6 @@ export default function HomeScreen() {
               })}
             </View>
           )}
-        </View>
-      )}
-
-      {/* Search Results */}
-      {stations.length > 0 && (
-        <View style={styles.resultsSection}>
-          <Text style={styles.sectionTitle}>Search Results</Text>
-          <FlatList
-            data={stations}
-            keyExtractor={(item) => item.id}
-            renderItem={renderStationItem}
-            scrollEnabled={false}
-          />
         </View>
       )}
 
