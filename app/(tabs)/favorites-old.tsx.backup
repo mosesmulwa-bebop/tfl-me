@@ -1,5 +1,4 @@
 import { DisruptionBanner } from '@/components/disruption/DisruptionBanner';
-import { DisruptionCard } from '@/components/disruption/DisruptionCard';
 import { StationCard } from '@/components/station/StationCard';
 import { LINE_COLORS } from '@/constants/tfl';
 import { formatTimeToStation } from '@/services/api/arrivals';
@@ -7,47 +6,31 @@ import { useArrivalsStore } from '@/store/arrivalsStore';
 import { useDisruptionsStore } from '@/store/disruptionsStore';
 import { useFavoritesStore } from '@/store/favoritesStore';
 import { Arrival } from '@/types/arrival';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
+    ActivityIndicator,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
 } from 'react-native';
 
 /**
- * Home Screen - Displays main station with real-time arrivals and relevant disruptions
+ * Home Screen - Displays main station with real-time arrivals
  */
 export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
-  const router = useRouter();
 
   // Zustand stores
-  const { favorites, mainStationId, loadFavorites, isLoading: favoritesLoading } =
-    useFavoritesStore();
+  const { favorites, mainStationId, loadFavorites, isLoading: favoritesLoading } = useFavoritesStore();
   const { arrivals, fetchArrivals, isLoading: arrivalsLoading } = useArrivalsStore();
   const { lineStatuses, fetchLineStatus, getDisruptedLines } = useDisruptionsStore();
 
-  const mainStation = favorites.find((fav) => fav.isMain);
-  const allDisruptedLines = getDisruptedLines();
-
-  // Get disruptions that affect the main station's lines
-  const stationDisruptions = useMemo(() => {
-    if (!mainStation || !mainStation.lines) return [];
-    
-    return allDisruptedLines.filter((disruptedLine) =>
-      mainStation.lines?.some(
-        (stationLine) =>
-          stationLine.toLowerCase().includes(disruptedLine.lineName.toLowerCase()) ||
-          disruptedLine.lineName.toLowerCase().includes(stationLine.toLowerCase())
-      )
-    );
-  }, [mainStation, allDisruptedLines]);
+  const mainStation = favorites.find(fav => fav.isMain);
+  const disruptedLines = getDisruptedLines();
 
   // Load favorites on mount
   useEffect(() => {
@@ -68,7 +51,6 @@ export default function HomeScreen() {
 
     const interval = setInterval(() => {
       fetchArrivals(mainStation.id);
-      fetchLineStatus();
     }, 30000);
 
     return () => clearInterval(interval);
@@ -99,16 +81,18 @@ export default function HomeScreen() {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#B8E6D5" />
-        <Text style={styles.loadingText}>Loading...</Text>
+        <Text style={styles.loadingText}>Loading favorites...</Text>
       </View>
     );
   }
 
   if (!mainStation) {
     return (
-      <ScrollView
+      <ScrollView 
         style={styles.container}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
       >
         <View style={styles.emptyState}>
           <Text style={styles.emptyIcon}>🚉</Text>
@@ -116,10 +100,7 @@ export default function HomeScreen() {
           <Text style={styles.emptyMessage}>
             Add your first favorite station to get started!
           </Text>
-          <Pressable 
-            style={styles.addButton}
-            onPress={() => router.push('/explore')}
-          >
+          <Pressable style={styles.addButton}>
             <Text style={styles.addButtonText}>+ Add Station</Text>
           </Pressable>
         </View>
@@ -128,16 +109,15 @@ export default function HomeScreen() {
   }
 
   return (
-    <ScrollView
+    <ScrollView 
       style={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+      }
     >
-      {/* General Disruption Banner (major system-wide issues) */}
-      {allDisruptedLines.length > 0 && stationDisruptions.length === 0 && (
-        <DisruptionBanner 
-          disruptedLines={allDisruptedLines} 
-          onPress={() => router.push('/disruptions')}
-        />
+      {/* Disruption Banner */}
+      {disruptedLines.length > 0 && (
+        <DisruptionBanner disruptedLines={disruptedLines} />
       )}
 
       {/* Main Station Card */}
@@ -145,16 +125,6 @@ export default function HomeScreen() {
         <Text style={styles.sectionTitle}>Your Main Station</Text>
         <StationCard station={mainStation} showMainBadge={false} />
       </View>
-
-      {/* Station-Specific Disruptions */}
-      {stationDisruptions.length > 0 && (
-        <View style={styles.disruptionsSection}>
-          <Text style={styles.sectionTitle}>⚠️ Service Alerts</Text>
-          {stationDisruptions.map((disruption) => (
-            <DisruptionCard key={disruption.lineId} lineStatus={disruption} />
-          ))}
-        </View>
-      )}
 
       {/* Arrivals Section */}
       <View style={styles.arrivalsSection}>
@@ -171,15 +141,15 @@ export default function HomeScreen() {
           Object.entries(arrivalsByLine).map(([lineName, lineArrivals]) => (
             <View key={lineName} style={styles.lineGroup}>
               <View style={styles.lineHeader}>
-                <View
+                <View 
                   style={[
-                    styles.lineColorBar,
-                    { backgroundColor: LINE_COLORS[lineArrivals[0].lineId] || '#8B7355' },
-                  ]}
+                    styles.lineColorBar, 
+                    { backgroundColor: LINE_COLORS[lineArrivals[0].lineId] || '#8B7355' }
+                  ]} 
                 />
                 <Text style={styles.lineName}>{lineName}</Text>
               </View>
-
+              
               {lineArrivals.slice(0, 3).map((arrival, index) => (
                 <ArrivalItem key={`${arrival.id}-${index}`} arrival={arrival} />
               ))}
@@ -187,6 +157,24 @@ export default function HomeScreen() {
           ))
         )}
       </View>
+
+      {/* Other Favorites */}
+      {favorites.length > 1 && (
+        <View style={styles.otherFavoritesSection}>
+          <Text style={styles.sectionTitle}>Other Favorites</Text>
+          {favorites
+            .filter(station => !station.isMain)
+            .map(station => (
+              <StationCard 
+                key={station.id} 
+                station={station}
+                onPress={() => {
+                  // Navigate to station detail
+                }}
+              />
+            ))}
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -203,7 +191,9 @@ const ArrivalItem: React.FC<{ arrival: Arrival }> = ({ arrival }) => {
           <Text style={styles.arrivalPlatform}>{arrival.platformName}</Text>
         )}
       </View>
-      <Text style={styles.arrivalTime}>{formatTimeToStation(arrival.timeToStation)}</Text>
+      <Text style={styles.arrivalTime}>
+        {formatTimeToStation(arrival.timeToStation)}
+      </Text>
     </View>
   );
 };
@@ -267,9 +257,6 @@ const styles = StyleSheet.create({
     color: '#5C4B37',
     marginHorizontal: 16,
     marginBottom: 8,
-  },
-  disruptionsSection: {
-    marginTop: 16,
   },
   arrivalsSection: {
     marginTop: 24,
@@ -343,5 +330,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#5C4B37',
     marginLeft: 12,
+  },
+  otherFavoritesSection: {
+    marginTop: 24,
+    marginBottom: 32,
   },
 });
