@@ -1,7 +1,7 @@
 import { LINE_COLORS } from '@/constants/tfl';
-import { formatTimeToStation } from '@/services/api/arrivals';
+import { formatTimeToStation, getRemainingSeconds } from '@/services/api/arrivals';
 import { Arrival } from '@/types/arrival';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 interface CollapsibleLineArrivalsProps {
@@ -103,14 +103,31 @@ export const CollapsibleLineArrivals: React.FC<CollapsibleLineArrivalsProps> = (
 
 /**
  * Arrival Item Component
+ *
+ * Displays a live countdown based on the train's expected arrival time so the
+ * value stays accurate between API refreshes.
  */
 const ArrivalItem: React.FC<{ arrival: Arrival }> = ({ arrival }) => {
+  const [remainingSeconds, setRemainingSeconds] = useState(() =>
+    getRemainingSeconds(arrival.expectedArrival)
+  );
+
+  useEffect(() => {
+    setRemainingSeconds(getRemainingSeconds(arrival.expectedArrival));
+
+    const interval = setInterval(() => {
+      setRemainingSeconds(getRemainingSeconds(arrival.expectedArrival));
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [arrival.expectedArrival]);
+
   return (
     <View style={styles.arrivalItem}>
       <View style={styles.arrivalLeft}>
         <Text style={styles.arrivalDestination}>{arrival.destinationName}</Text>
       </View>
-      <Text style={styles.arrivalTime}>{formatTimeToStation(arrival.timeToStation)}</Text>
+      <Text style={styles.arrivalTime}>{formatTimeToStation(remainingSeconds)}</Text>
     </View>
   );
 };
