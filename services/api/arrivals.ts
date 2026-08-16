@@ -1,5 +1,6 @@
 import { TflArrival } from '@/types/api';
 import { Arrival } from '@/types/arrival';
+import { differenceInSeconds } from 'date-fns';
 import { tflClient } from './client';
 import { resolveStationId, type StationResolutionResult } from './stations';
 
@@ -126,6 +127,20 @@ export const getLineArrivals = async (lineId: string): Promise<Arrival[]> => {
     console.error('Error fetching line arrivals:', error);
     throw error;
   }
+};
+
+/**
+ * Calculate the remaining seconds until a train arrives based on its
+ * expected arrival time and the current clock.
+ *
+ * TfL's timeToStation is correct at the moment the API response is generated,
+ * but becomes stale between refreshes. Using expectedArrival (an absolute UTC
+ * timestamp) keeps the countdown accurate as time passes.
+ */
+export const getRemainingSeconds = (expectedArrival: Date): number => {
+  const now = new Date();
+  const remaining = differenceInSeconds(expectedArrival, now);
+  return Math.max(0, remaining);
 };
 
 /**
